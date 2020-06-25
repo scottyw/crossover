@@ -1,0 +1,41 @@
+name: Update Feeds
+
+on:
+  schedule:
+  - cron: "0 2 * * *"
+  push:
+    branches: [ master ]
+
+jobs:
+
+  update:
+    name: Update feed
+    runs-on: ubuntu-latest
+    steps:
+
+    - name: Set up Go 1.x
+      uses: actions/setup-go@v2
+      with:
+        go-version: ^1.13
+      id: go
+
+    - name: Check out code into the Go module directory
+      uses: actions/checkout@v2
+
+    - name: Run
+      env:
+        SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+        FROM_ADDRESS: ${{ secrets.FROM_ADDRESS }}
+        TO_ADDRESS: ${{ secrets.TO_ADDRESS }}
+      run: go run cmd/main.go
+
+    - name: Commit files
+      run: |
+        git config --local user.email "action@github.com"
+        git config --local user.name "GitHub Action"
+        git diff-index --quiet HEAD || (git add targets.json && git commit -m "Update targets after scheduled run")
+
+    - name: Push changes
+      uses: ad-m/github-push-action@master
+      with:
+        github_token: ${{ secrets.GITHUB_TOKEN }}
