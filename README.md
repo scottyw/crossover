@@ -40,7 +40,7 @@ Edit `targets.json` and add feed URLs as keys with `null` as the corresponding v
 }
 ```
 
-Crossover will use this file to record the most recently seen item for each feed. After an update your targets file will look something like this:
+This file keeps a record of the most recently seen item for each feed. After an update your targets file will look something like this:
 
 ```json
 {
@@ -51,7 +51,7 @@ Crossover will use this file to record the most recently seen item for each feed
 
 **Step 4: Check update progress**
 
-Feeds are checked for updates at 2am UTC and on every commit.
+Feeds are checked for updates at 2am UTC and on every commit, meaning an update will happen immediately when you add a new feed. You can also force a complete update for a feed by setting the timestamp value back to `null`.
 
 You can check progress in the "Actions" section of your repo.
 
@@ -71,7 +71,7 @@ Don't think of this as a quality product.
 
 * There's no smart processing of feeds. I just assume they have dates, titles, links and contents/descriptions
 * The HTML template is terrible. I cobbled it together with no skill and if you have insight on how to tweak it in an email-friendly manner I am interested!
-* The error handling is laughable. You better hope nothing goes wrong or you'll enjoy an opaque immediate exit.
+* The error handling is basic but should be enough to diagnose issues
 
 ### Thanks
 

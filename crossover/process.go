@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"io/ioutil"
 	"log"
@@ -23,21 +24,31 @@ type newItem struct {
 
 // Process a target file
 func Process(filename string) {
-	targets := loadTargetFile(filename)
+	targets, err := loadTargetFile(filename)
+	if err != nil {
+		log.Fatal(err)
+	}
 	var updated bool
 	for url, timestamp := range targets {
-		updatedTimestamp := processFeed(url, timestamp)
-		if updatedTimestamp != nil {
-			targets[url] = updatedTimestamp
-			updated = true
+		updatedTimestamp, err := processFeed(url, timestamp)
+		if err != nil {
+			log.Printf("Failed to process feed \"%s\"", url)
+			continue
 		}
+		if updatedTimestamp == nil {
+			log.Printf("No new items found in feed \"%s\"", url)
+			continue
+		}
+		log.Printf("New items found in feed \"%s\"", url)
+		targets[url] = updatedTimestamp
+		updated = true
 	}
 	if updated {
 		saveTargetFile(filename, targets)
 	}
 }
 
-func processFeed(url string, timestamp *time.Time) *time.Time {
+func processFeed(url string, timestamp *time.Time) (*time.Time, error) {
 
 	// Fetch the latest from the feed
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
@@ -45,7 +56,7 @@ func processFeed(url string, timestamp *time.Time) *time.Time {
 	fp := gofeed.NewParser()
 	feed, err := fp.ParseURLWithContext(url, ctx)
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("failed to load and parse URL '%s': %w", url, err)
 	}
 
 	// Find items that are newer than the timestamp
@@ -76,20 +87,15 @@ func processFeed(url string, timestamp *time.Time) *time.Time {
 
 	// No need to go any further if there is nothing new
 	if len(newItems) == 0 {
-		log.Printf("No new items found in feed \"%s\" (%s)", feed.Title, url)
-		return nil
+		return nil, nil
 	}
 
 	// Render the new items as an HTML email
-	log.Printf("New items found in feed \"%s\" (%s)", feed.Title, url)
-	t, err := template.New("email").Parse(inlineTemplate)
-	if err != nil {
-		log.Fatal(err)
-	}
+	t := template.Must(template.New("email").Parse(inlineTemplate))
 	var bb bytes.Buffer
 	err = t.Execute(&bb, newItems)
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("failed to render email template for URL '%s': %w", url, err)
 	}
 	html := bb.Bytes()
 
@@ -102,15 +108,15 @@ func processFeed(url string, timestamp *time.Time) *time.Time {
 	// Check we have the necessary environment to send email
 	fromAddress := os.Getenv("FROM_ADDRESS")
 	if fromAddress == "" {
-		log.Fatal("Environment variable FROM_ADDRESS must be specified")
+		return nil, fmt.Errorf("Environment variable FROM_ADDRESS must be specified")
 	}
 	toAddress := os.Getenv("TO_ADDRESS")
 	if toAddress == "" {
-		log.Fatal("Environment variable TO_ADDRESS must be specified")
+		return nil, fmt.Errorf("Environment variable TO_ADDRESS must be specified")
 	}
 	apiKey := os.Getenv("SENDGRID_API_KEY")
 	if apiKey == "" {
-		log.Fatal("Environment variable SENDGRID_API_KEY must be specified")
+		return nil, fmt.Errorf("Environment variable SENDGRID_API_KEY must be specified")
 	}
 
 	// Send an email with the new items from this feed
@@ -121,46 +127,47 @@ func processFeed(url string, timestamp *time.Time) *time.Time {
 	client := sendgrid.NewSendClient(apiKey)
 	response, err := client.Send(message)
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("failed to send email via SendGrid for URL '%s': %w", url, err)
 	}
 	if response.StatusCode >= 400 {
-		log.Fatalf("%d: %s\n%v", response.StatusCode, response.Body, response.Headers)
+		return nil, fmt.Errorf("received error response %d from SendGrid for URL '%s': %s", response.StatusCode, url, response.Body)
 	}
 	log.Print("Email sent successfully")
 
 	// Return the updated timestamp
 	switch {
 	case feed.PublishedParsed != nil:
-		return feed.PublishedParsed
+		return feed.PublishedParsed, nil
 	case feed.UpdatedParsed != nil:
-		return feed.UpdatedParsed
+		return feed.UpdatedParsed, nil
 	default:
 		now := time.Now()
-		return &now
+		return &now, nil
 	}
 
 }
 
-func loadTargetFile(filename string) map[string]*time.Time {
+func loadTargetFile(filename string) (map[string]*time.Time, error) {
 	targets := map[string]*time.Time{}
 	data, err := ioutil.ReadFile(filename)
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("failed to load target file '%s': %w", filename, err)
 	}
 	err = json.Unmarshal(data, &targets)
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("failed to unmarshal target file '%s' (possibly invalid JSON): %w", filename, err)
 	}
-	return targets
+	return targets, nil
 }
 
-func saveTargetFile(filename string, targets map[string]*time.Time) {
+func saveTargetFile(filename string, targets map[string]*time.Time) error {
 	data, err := json.MarshalIndent(targets, "", "    ")
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("failed to marhsal target file '%s': %w", filename, err)
 	}
 	err = ioutil.WriteFile(filename, data, 0777)
 	if err != nil {
-		log.Fatal(err)
+		return fmt.Errorf("failed to write target file '%s': %w", filename, err)
 	}
+	return nil
 }
