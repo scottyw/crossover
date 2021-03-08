@@ -1,10 +1,10 @@
 name: Update Feeds
 
-on:
-  schedule:
-  - cron: "0 2 * * *"
-  push:
-    branches: [ master ]
+#on:
+#  schedule:
+#  - cron: "0 2 * * *"
+#  push:
+#    branches: [ master ]
 
 jobs:
 
